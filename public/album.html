@@ -21,11 +21,14 @@
     }
 
     .logo {
-      font-size: 2rem;
-      font-weight: 700;
-      color: #c9a84c;
-      letter-spacing: 2px;
-      margin-bottom: 8px;
+      margin-bottom: 4px;
+    }
+
+    .logo img {
+      height: 170px;
+      width: auto;
+      display: block;
+      margin: 0 auto;
     }
 
     .client-name {
@@ -143,7 +146,9 @@
 <body>
 
   <div class="header">
-    <div class="logo">🌙 Moonlight</div>
+    <div class="logo">
+      <img src="https://raw.githubusercontent.com/moonlight-photo-studio/moonlight-photo-studio/4d89945c9e4a44602ee7381168ba2a9ea9f0670e/public/logo.png" alt="Moonlight Photo Studio">
+    </div>
     <div class="client-name" id="clientName">Loading...</div>
     <div class="expiry">This album expires on <span id="expiryTime"></span></div>
   </div>
