@@ -19,11 +19,13 @@
     }
 
     .logo {
-      font-size: 2rem;
-      font-weight: 700;
-      color: #c9a84c;
-      margin-bottom: 8px;
-      letter-spacing: 2px;
+      margin-bottom: 4px;
+    }
+
+    .logo img {
+      height: 170px;
+      width: auto;
+      display: block;
     }
 
     .tagline {
@@ -137,7 +139,9 @@
 </head>
 <body>
 
-  <div class="logo">🌙 Moonlight</div>
+  <div class="logo">
+    <img src="https://raw.githubusercontent.com/moonlight-photo-studio/moonlight-photo-studio/4d89945c9e4a44602ee7381168ba2a9ea9f0670e/public/logo.png" alt="Moonlight Photo Studio">
+  </div>
   <div class="tagline">Photo Studio — Internal Upload</div>
 
   <div class="card">
@@ -197,8 +201,8 @@
         const data = await res.json();
 
         const qrImg = document.getElementById('qrImage');
-qrImg.src = '';
-setTimeout(() => { qrImg.src = data.qrCode; }, 100);
+        qrImg.src = '';
+        setTimeout(() => { qrImg.src = data.qrCode; }, 100);
         document.getElementById('albumLink').href = data.albumUrl;
         document.getElementById('albumLink').textContent = data.albumUrl;
         document.getElementById('result').style.display = 'block';
