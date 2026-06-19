@@ -6,6 +6,7 @@ const QRCode = require('qrcode');
 const { nanoid } = require('nanoid');
 const path = require('path');
 const fs = require('fs');
+const cron = require('node-cron');
 
 // ---- Setup ----
 const app = express();
@@ -14,6 +15,60 @@ const upload = multer({ dest: 'uploads/' });
 
 app.use(express.json());
 app.use(express.static('public'));
+
+// ---- Auto Delete Expired Albums ----
+async function cleanupExpiredAlbums() {
+  console.log('🧹 Running cleanup...');
+
+  // Find all expired albums
+  const { data: expiredAlbums, error } = await supabase
+    .from('albums')
+    .select('*')
+    .lt('expires_at', new Date().toISOString());
+
+  if (error) return console.error('Cleanup error:', error.message);
+  if (!expiredAlbums || expiredAlbums.length === 0) return console.log('✅ No expired albums to clean up.');
+
+  for (const album of expiredAlbums) {
+    // Delete each photo from storage
+    if (album.photos && album.photos.length > 0) {
+      const filePaths = album.photos.map(url => {
+        const parts = url.split('/storage/v1/object/public/photos/');
+        return parts[1];
+      });
+
+      const { error: storageError } = await supabase.storage
+        .from('photos')
+        .remove(filePaths);
+
+      if (storageError) {
+        console.error(`Storage delete error for album ${album.id}:`, storageError.message);
+      } else {
+        console.log(`🗑️ Deleted photos for album ${album.id}`);
+      }
+    }
+
+    // Delete album from database
+    const { error: dbError } = await supabase
+      .from('albums')
+      .delete()
+      .eq('id', album.id);
+
+    if (dbError) {
+      console.error(`DB delete error for album ${album.id}:`, dbError.message);
+    } else {
+      console.log(`🗑️ Deleted album ${album.id} from database`);
+    }
+  }
+
+  console.log(`✅ Cleanup done! Removed ${expiredAlbums.length} expired album(s).`);
+}
+
+// Run cleanup every hour
+cron.schedule('0 * * * *', cleanupExpiredAlbums);
+
+// Also run once on startup
+cleanupExpiredAlbums();
 
 // ---- Routes ----
 
@@ -38,7 +93,6 @@ app.post('/upload', upload.array('photos'), async (req, res) => {
       .getPublicUrl(fileName);
 
     photoUrls.push(urlData.publicUrl);
-
     fs.unlinkSync(file.path);
   }
 
