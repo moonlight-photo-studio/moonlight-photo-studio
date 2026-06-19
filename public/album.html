@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Moonlight Photo Studio — Your Album</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      min-height: 100vh;
+      background: #0a0a0f;
+      color: #fff;
+      font-family: 'Segoe UI', sans-serif;
+      padding: 40px 20px;
+    }
+
+    .header {
+      text-align: center;
+      margin-bottom: 40px;
+    }
+
+    .logo {
+      font-size: 2rem;
+      font-weight: 700;
+      color: #c9a84c;
+      letter-spacing: 2px;
+      margin-bottom: 8px;
+    }
+
+    .client-name {
+      font-size: 1.1rem;
+      color: #888;
+      margin-bottom: 8px;
+    }
+
+    .expiry {
+      font-size: 0.8rem;
+      color: #555;
+    }
+
+    .expiry span { color: #c9a84c; }
+
+    .loading {
+      text-align: center;
+      color: #888;
+      margin-top: 80px;
+      font-size: 1rem;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+      gap: 16px;
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+
+    .photo-card {
+      background: #13131a;
+      border: 1px solid #2a2a3a;
+      border-radius: 12px;
+      overflow: hidden;
+      cursor: pointer;
+      transition: transform 0.2s, border-color 0.2s;
+    }
+
+    .photo-card:hover {
+      transform: translateY(-4px);
+      border-color: #c9a84c;
+    }
+
+    .photo-card img {
+      width: 100%;
+      height: 220px;
+      object-fit: cover;
+      display: block;
+    }
+
+    .photo-card .download {
+      padding: 10px 16px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .photo-card .download span {
+      font-size: 0.8rem;
+      color: #888;
+    }
+
+    .photo-card .download button {
+      background: none;
+      border: 1px solid #c9a84c;
+      color: #c9a84c;
+      padding: 4px 12px;
+      border-radius: 6px;
+      font-size: 0.8rem;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+
+    .photo-card .download button:hover {
+      background: #c9a84c;
+      color: #0a0a0f;
+    }
+
+    /* Lightbox */
+    .lightbox {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.95);
+      z-index: 100;
+      justify-content: center;
+      align-items: center;
+      flex-direction: column;
+    }
+
+    .lightbox.active { display: flex; }
+
+    .lightbox img {
+      max-width: 90vw;
+      max-height: 80vh;
+      border-radius: 8px;
+      object-fit: contain;
+    }
+
+    .lightbox-close {
+      position: absolute;
+      top: 20px;
+      right: 24px;
+      font-size: 2rem;
+      color: #fff;
+      cursor: pointer;
+      background: none;
+      border: none;
+    }
+
+    .lightbox-close:hover { color: #c9a84c; }
+  </style>
+</head>
+<body>
+
+  <div class="header">
+    <div class="logo">🌙 Moonlight</div>
+    <div class="client-name" id="clientName">Loading...</div>
+    <div class="expiry">This album expires on <span id="expiryTime"></span></div>
+  </div>
+
+  <div class="loading" id="loading">Loading your photos...</div>
+  <div class="grid" id="grid"></div>
+
+  <!-- Lightbox -->
+  <div class="lightbox" id="lightbox">
+    <button class="lightbox-close" onclick="closeLightbox()">✕</button>
+    <img id="lightboxImg" src="" alt="">
+  </div>
+
+  <script>
+    const albumId = window.location.pathname.split('/').pop();
+
+    async function loadAlbum() {
+      try {
+        const res = await fetch(`/api/album/${albumId}`);
+        if (!res.ok) {
+          window.location.href = '/expired.html';
+          return;
+        }
+
+        const album = await res.json();
+
+        document.getElementById('clientName').textContent = `${album.client_name}'s Album`;
+        document.title = `${album.client_name}'s Album — Moonlight`;
+
+        const expiry = new Date(album.expires_at);
+        document.getElementById('expiryTime').textContent = expiry.toLocaleString('en-PH', {
+          month: 'long', day: 'numeric', year: 'numeric',
+          hour: '2-digit', minute: '2-digit'
+        });
+
+        document.getElementById('loading').style.display = 'none';
+
+        const grid = document.getElementById('grid');
+        album.photos.forEach((url, i) => {
+          const card = document.createElement('div');
+          card.className = 'photo-card';
+          card.innerHTML = `
+            <img src="${url}" alt="Photo ${i + 1}" onclick="openLightbox('${url}')">
+            <div class="download">
+              <span>Photo ${i + 1}</span>
+              <button onclick="downloadPhoto('${url}', ${i + 1})">Download</button>
+            </div>
+          `;
+          grid.appendChild(card);
+        });
+
+      } catch (err) {
+        window.location.href = '/expired.html';
+      }
+    }
+
+    function openLightbox(url) {
+      document.getElementById('lightboxImg').src = url;
+      document.getElementById('lightbox').classList.add('active');
+    }
+
+    function closeLightbox() {
+      document.getElementById('lightbox').classList.remove('active');
+    }
+
+    async function downloadPhoto(url, index) {
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `moonlight-photo-${index}.jpg`;
+      link.target = '_blank';
+      link.click();
+    }
+
+    loadAlbum();
+  </script>
+
+</body>
+</html>
