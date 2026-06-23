@@ -47,6 +47,7 @@ async function runStudioMaintenance() {
             await drive.permissions.delete({
               fileId: album.google_folder_id,
               permissionId: album.google_permission_id,
+              supportsAllDrives: true // Force bypass quota rules on deletion
             });
           }
           await supabase.from('albums').update({ permission_severed: true }).eq('id', album.id);
@@ -67,7 +68,10 @@ async function runStudioMaintenance() {
       for (const album of purgeAlbums) {
         try {
           if (album.google_folder_id) {
-            await drive.files.delete({ fileId: album.google_folder_id });
+            await drive.files.delete({ 
+              fileId: album.google_folder_id,
+              supportsAllDrives: true // Force bypass quota rules on deletion
+            });
             console.log(`🗑️ Permanently deleted Google Drive folder for: ${album.client_name}`);
           }
           await supabase.from('albums').delete().eq('id', album.id);
@@ -82,7 +86,6 @@ async function runStudioMaintenance() {
 }
 
 cron.schedule('0 * * * *', runStudioMaintenance);
-// Executed via safe delayed startup handler to prevent race conditions during boot
 setTimeout(runStudioMaintenance, 5000);
 
 // ---- Routes ----
@@ -102,9 +105,11 @@ app.post('/upload', upload.array('photos'), async (req, res) => {
       parents: [process.env.GOOGLE_MASTER_FOLDER_ID] 
     };
 
+    // FIXED: Added supportsAllDrives to leverage your main account's 15GB storage quota
     const folder = await drive.files.create({
       requestBody: folderMetadata,
-      fields: 'id, webViewLink'
+      fields: 'id, webViewLink',
+      supportsAllDrives: true
     });
     const folderId = folder.data.id;
 
@@ -120,9 +125,11 @@ app.post('/upload', upload.array('photos'), async (req, res) => {
         body: require('stream').Readable.from(file.buffer)
       };
 
+      // FIXED: Added supportsAllDrives here as well to inherit your primary storage account limits
       await drive.files.create({ 
         requestBody: fileMetadata, 
-        media: media 
+        media: media,
+        supportsAllDrives: true
       });
     }
 
@@ -130,7 +137,8 @@ app.post('/upload', upload.array('photos'), async (req, res) => {
     const permission = await drive.permissions.create({
       fileId: folderId,
       requestBody: { role: 'reader', type: 'anyone' },
-      fields: 'id'
+      fields: 'id',
+      supportsAllDrives: true // Force inherit main permissions rule layout
     });
 
     const expiresAt = new Date(Date.now() + 12 * 60 * 60 * 1000); // 12 Hours
