@@ -57,7 +57,7 @@
       margin-bottom: 6px;
     }
 
-    input[type="text"], input[type="url"] {
+    input[type="text"] {
       width: 100%;
       padding: 12px 16px;
       background: #1e1e2e;
@@ -69,9 +69,26 @@
       outline: none;
     }
 
-    input[type="text"]:focus, input[type="url"]:focus {
+    input[type="text"]:focus {
       border-color: #c9a84c;
     }
+
+    .upload-area {
+      border: 2px dashed #2a2a3a;
+      border-radius: 12px;
+      padding: 40px;
+      text-align: center;
+      cursor: pointer;
+      margin-bottom: 20px;
+      transition: border-color 0.2s;
+    }
+
+    .upload-area:hover { border-color: #c9a84c; }
+    .upload-area p { color: #888; font-size: 0.9rem; }
+    .upload-area span { color: #c9a84c; font-weight: 600; }
+
+    #fileInput { display: none; }
+    #fileCount { color: #c9a84c; font-size: 0.85rem; margin-bottom: 20px; }
 
     button {
       width: 100%;
@@ -91,7 +108,7 @@
 
     .result { margin-top: 32px; text-align: center; display: none; }
     .result h3 { color: #c9a84c; margin-bottom: 16px; }
-    .result img { width: 200px; height: 200px; border-radius: 12px; margin-bottom: 16px; }
+    .result img { width: 200px; height: 200px; border-radius: 12px; margin-bottom: 16px; background:#fff; padding:8px; }
 
     .album-link {
       display: block;
@@ -125,59 +142,63 @@
   <div class="logo">
     <img src="https://raw.githubusercontent.com/moonlight-photo-studio/moonlight-photo-studio/4d89945c9e4a44602ee7381168ba2a9ea9f0670e/public/logo.png" alt="Moonlight Photo Studio">
   </div>
-  <div class="tagline">Photo Studio — Internal Upload System</div>
+  <div class="tagline">Photo Studio — Auto Multi-Cloud Engine</div>
 
   <div class="card">
-    <h2>Create Client Album Link</h2>
+    <h2>Create Client Album</h2>
 
     <label>Client Name</label>
     <input type="text" id="clientName" placeholder="e.g. Juan dela Cruz">
 
-    <label>Google Drive Link</label>
-    <input type="url" id="driveUrl" placeholder="https://drive.google.com/drive/folders/...">
+    <label>Photos</label>
+    <div class="upload-area" onclick="document.getElementById('fileInput').click()">
+      <p>Click to select softcopies</p>
+      <p><span>Browse local files</span></p>
+    </div>
+    <input type="file" id="fileInput" multiple accept="image/*">
+    <div id="fileCount">No files selected</div>
 
-    <button id="uploadBtn" onclick="generateLink()" disabled>Generate QR Code</button>
+    <button id="uploadBtn" onclick="processUpload()" disabled>Generate QR Code</button>
 
     <div class="result" id="result">
-      <h3>✅ Redirect QR Created!</h3>
-      <img id="qrImage" src="" alt="QR Code" style="width:200px;height:200px;background:#fff;padding:8px;border-radius:8px;">
+      <h3>✅ Automated Drive Album Formed!</h3>
+      <img id="qrImage" src="" alt="QR Code">
       <a class="album-link" id="albumLink" target="_blank"></a>
       <button class="download-btn" onclick="downloadQR()">Download QR Code</button>
-      <p class="expiry-note">⏱ This QR gateway access will break entirely in 12 hours</p>
+      <p class="expiry-note">⏱ QR breaks in 12 hours. Source files cleared in 3 days.</p>
     </div>
   </div>
 
   <script>
+    const fileInput = document.getElementById('fileInput');
     const clientNameInput = document.getElementById('clientName');
-    const driveUrlInput = document.getElementById('driveUrl');
     const uploadBtn = document.getElementById('uploadBtn');
+    const fileCount = document.getElementById('fileCount');
 
-    // Validates inputs to keep button locked until text is typed out
-    function validateForm() {
-      uploadBtn.disabled = !clientNameInput.value.trim() || !driveUrlInput.value.trim();
+    function checkForm() {
+      uploadBtn.disabled = fileInput.files.length === 0 || !clientNameInput.value.trim();
     }
 
-    clientNameInput.addEventListener('input', validateForm);
-    driveUrlInput.addEventListener('input', validateForm);
+    fileInput.addEventListener('change', () => {
+      const count = fileInput.files.length;
+      fileCount.textContent = count > 0 ? `${count} photo(s) queued` : 'No files selected';
+      checkForm();
+    });
+    clientNameInput.addEventListener('input', checkForm);
 
-    async function generateLink() {
-      const clientName = clientNameInput.value.trim();
-      const driveUrl = driveUrlInput.value.trim();
-
+    async function processUpload() {
       uploadBtn.disabled = true;
-      uploadBtn.textContent = 'Processing...';
+      uploadBtn.textContent = 'Streaming to Google Drive...';
+
+      const formData = new FormData();
+      formData.append('client_name', clientNameInput.value.trim());
+      for (const file of fileInput.files) formData.append('photos', file);
 
       try {
-        const res = await fetch('/upload', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ client_name: clientName, drive_url: driveUrl })
-        });
-        
+        const res = await fetch('/upload', { method: 'POST', body: formData });
         const data = await res.json();
         if (data.error) throw new Error(data.error);
 
-        // Sets up the visual QR block elements on success
         document.getElementById('qrImage').src = data.qrCode;
         document.getElementById('albumLink').href = data.albumUrl;
         document.getElementById('albumLink').textContent = data.albumUrl;
@@ -186,7 +207,7 @@
         uploadBtn.textContent = 'Generate QR Code';
         uploadBtn.disabled = false;
       } catch (err) {
-        alert('Generation failed. Please try again.');
+        alert('Automation failed. Check your API settings.');
         uploadBtn.disabled = false;
         uploadBtn.textContent = 'Generate QR Code';
       }
@@ -194,11 +215,10 @@
 
     function downloadQR() {
       const link = document.createElement('a');
-      link.download = 'moonlight-redirect-qr.png';
+      link.download = 'moonlight-drive-qr.png';
       link.href = document.getElementById('qrImage').src;
       link.click();
     }
   </script>
-
 </body>
 </html>
