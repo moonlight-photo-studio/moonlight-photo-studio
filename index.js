@@ -16,11 +16,11 @@ app.use(express.json());
 app.use(express.static('public'));
 
 // ---- Google Drive User Account OAuth Setup ----
-// SHORTCUT FIX: Hardcodes the universal playground keys so you don't need CLIENT variables in Railway!
+// FIXED: Reads your personal credentials from Railway variables to perfectly match your token
 const oauth2Client = new google.auth.OAuth2(
-  '407408718192.apps.googleusercontent.com', 
-  '7991-b33od9b8v659',                       
-  'https://developers.google.com/oauthplayground' 
+  process.env.GOOGLE_CLIENT_ID,
+  process.env.GOOGLE_CLIENT_SECRET,
+  'https://developers.google.com/oauthplayground'
 );
 
 oauth2Client.setCredentials({
