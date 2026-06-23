@@ -7,11 +7,12 @@ const { nanoid } = require('nanoid');
 const path = require('path');
 const { google } = require('googleapis');
 const cron = require('node-cron');
+const { Readable } = require('stream'); // Explicitly imported for steady file streams
 
 const app = express();
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY);
 
-// Cache images safely in memory
+// Memory storage routes the files straight through server RAM to Google Drive instantly without disk cache
 const upload = multer({ storage: multer.memoryStorage() });
 
 app.use(express.json());
@@ -30,63 +31,59 @@ const drive = google.drive({ version: 'v3', auth });
 // ---- Dual-Stage Automated Cleanup Background Worker ----
 async function runStudioMaintenance() {
   console.log('🧹 Running system maintenance checks...');
-  try {
-    const now = new Date().toISOString();
+  const now = new Date().toISOString();
 
-    // STAGE 1: Sever Google Drive access permissions after 12 Hours
-    const { data: cutAccessAlbums } = await supabase
-      .from('albums')
-      .select('*')
-      .lt('expires_at', now)
-      .eq('permission_severed', false);
+  // STAGE 1: Sever Google Drive access permissions after 12 Hours
+  const { data: cutAccessAlbums } = await supabase
+    .from('albums')
+    .select('*')
+    .lt('expires_at', now)
+    .eq('permission_severed', false);
 
-    if (cutAccessAlbums && cutAccessAlbums.length > 0) {
-      for (const album of cutAccessAlbums) {
-        try {
-          if (album.google_permission_id && album.google_folder_id) {
-            await drive.permissions.delete({
-              fileId: album.google_folder_id,
-              permissionId: album.google_permission_id,
-              supportsAllDrives: true // Force bypass quota rules on deletion
-            });
-          }
-          await supabase.from('albums').update({ permission_severed: true }).eq('id', album.id);
-          console.log(`🔒 Severed public access link for client album: ${album.client_name}`);
-        } catch (err) {
-          console.error(`Failed to sever access for album ${album.id}:`, err.message);
+  if (cutAccessAlbums && cutAccessAlbums.length > 0) {
+    for (const album of cutAccessAlbums) {
+      try {
+        if (album.google_permission_id && album.google_folder_id) {
+          await drive.permissions.delete({
+            fileId: album.google_folder_id,
+            permissionId: album.google_permission_id,
+          });
         }
+        await supabase
+          .from('albums')
+          .update({ permission_severed: true })
+          .eq('id', album.id);
+          
+        console.log(`🔒 Severed public access link for client album: ${album.client_name}`);
+      } catch (err) {
+        console.error(`Failed to sever access for album ${album.id}:`, err.message);
       }
     }
+  }
 
-    // STAGE 2: Permanently Delete the Folder from Drive after 3 Days (72 Hours)
-    const { data: purgeAlbums } = await supabase
-      .from('albums')
-      .select('*')
-      .lt('delete_at', now);
+  // STAGE 2: Permanently Delete the Folder from Drive after 3 Days (72 Hours)
+  const { data: purgeAlbums } = await supabase
+    .from('albums')
+    .select('*')
+    .lt('delete_at', now);
 
-    if (purgeAlbums && purgeAlbums.length > 0) {
-      for (const album of purgeAlbums) {
-        try {
-          if (album.google_folder_id) {
-            await drive.files.delete({ 
-              fileId: album.google_folder_id,
-              supportsAllDrives: true // Force bypass quota rules on deletion
-            });
-            console.log(`🗑️ Permanently deleted Google Drive folder for: ${album.client_name}`);
-          }
-          await supabase.from('albums').delete().eq('id', album.id);
-        } catch (err) {
-          console.error(`Failed to delete folder for album ${album.id}:`, err.message);
+  if (purgeAlbums && purgeAlbums.length > 0) {
+    for (const album of purgeAlbums) {
+      try {
+        if (album.google_folder_id) {
+          await drive.files.delete({ fileId: album.google_folder_id });
+          console.log(`🗑️ Permanently deleted Google Drive folder for: ${album.client_name}`);
         }
+        await supabase.from('albums').delete().eq('id', album.id);
+      } catch (err) {
+        console.error(`Failed to delete folder for album ${album.id}:`, err.message);
       }
     }
-  } catch (globalCronErr) {
-    console.error('Maintenance background loop error:', globalCronErr.message);
   }
 }
 
 cron.schedule('0 * * * *', runStudioMaintenance);
-setTimeout(runStudioMaintenance, 5000);
+runStudioMaintenance();
 
 // ---- Routes ----
 
@@ -105,31 +102,32 @@ app.post('/upload', upload.array('photos'), async (req, res) => {
       parents: [process.env.GOOGLE_MASTER_FOLDER_ID] 
     };
 
-    // FIXED: Added supportsAllDrives to leverage your main account's 15GB storage quota
     const folder = await drive.files.create({
       requestBody: folderMetadata,
-      fields: 'id, webViewLink',
-      supportsAllDrives: true
+      fields: 'id, webViewLink'
     });
     const folderId = folder.data.id;
 
-    // Step B: Loop and upload files safely using a plain data payload stream
+    // Step B: FIXED stream pipeline block for uploading files stably
     for (const file of req.files) {
       const fileMetadata = {
         name: `${Date.now()}-${file.originalname}`,
         parents: [folderId]
       };
 
+      // Creates a clean, readable stream out of the multer memory buffer
+      const bufferStream = new Readable();
+      bufferStream.push(file.buffer);
+      bufferStream.push(null); // Signals the end of the file data stream
+
       const media = {
         mimeType: file.mimetype,
-        body: require('stream').Readable.from(file.buffer)
+        body: bufferStream
       };
 
-      // FIXED: Added supportsAllDrives here as well to inherit your primary storage account limits
       await drive.files.create({ 
         requestBody: fileMetadata, 
-        media: media,
-        supportsAllDrives: true
+        media: media 
       });
     }
 
@@ -137,8 +135,7 @@ app.post('/upload', upload.array('photos'), async (req, res) => {
     const permission = await drive.permissions.create({
       fileId: folderId,
       requestBody: { role: 'reader', type: 'anyone' },
-      fields: 'id',
-      supportsAllDrives: true // Force inherit main permissions rule layout
+      fields: 'id'
     });
 
     const expiresAt = new Date(Date.now() + 12 * 60 * 60 * 1000); // 12 Hours
@@ -163,26 +160,22 @@ app.post('/upload', upload.array('photos'), async (req, res) => {
 
     res.json({ albumId, albumUrl, qrCode: qrDataURL });
   } catch (err) {
-    console.error("🔥 CRITICAL BACKEND UPLOAD ERROR:", err.message);
+    console.error("Upload error details:", err.message); // Logs specific reason to Railway console panel
     res.status(500).json({ error: err.message });
   }
 });
 
 // 2. Client QR Scan Router
 app.get('/album/:id', async (req, res) => {
-  try {
-    const { id } = req.params;
-    const { data: album, error } = await supabase.from('albums').select('*').eq('id', id).single();
+  const { id } = req.params;
+  const { data: album, error } = await supabase.from('albums').select('*').eq('id', id).single();
 
-    if (error || !album) return res.sendFile(path.join(__dirname, 'public', 'expired.html'));
+  if (error || !album) return res.sendFile(path.join(__dirname, 'public', 'expired.html'));
 
-    const now = new Date();
-    if (now > new Date(album.expires_at)) return res.sendFile(path.join(__dirname, 'public', 'expired.html'));
+  const now = new Date();
+  if (now > new Date(album.expires_at)) return res.sendFile(path.join(__dirname, 'public', 'expired.html'));
 
-    res.redirect(album.photos[0]);
-  } catch (err) {
-    res.sendFile(path.join(__dirname, 'public', 'expired.html'));
-  }
+  res.redirect(album.photos[0]);
 });
 
 // 3. Fallback database endpoint logic
