@@ -7,6 +7,7 @@ const { nanoid } = require('nanoid');
 const path = require('path');
 const { google } = require('googleapis');
 const cron = require('node-cron');
+const { Readable } = require('stream'); // Explicitly imported for steady file streams
 
 const app = express();
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY);
@@ -42,15 +43,17 @@ async function runStudioMaintenance() {
   if (cutAccessAlbums && cutAccessAlbums.length > 0) {
     for (const album of cutAccessAlbums) {
       try {
-        // Remove public permission on Google Drive folder
         if (album.google_permission_id && album.google_folder_id) {
           await drive.permissions.delete({
             fileId: album.google_folder_id,
             permissionId: album.google_permission_id,
           });
         }
-        // Update DB flag status so we don't try to loop unshare it again
-        await supabase.from('albums').update({ permission_severed: true }).eq('id', album.id);
+        await supabase
+          .from('albums')
+          .update({ permission_severed: true })
+          .eq('id', album.id);
+          
         console.log(`🔒 Severed public access link for client album: ${album.client_name}`);
       } catch (err) {
         console.error(`Failed to sever access for album ${album.id}:`, err.message);
@@ -71,7 +74,6 @@ async function runStudioMaintenance() {
           await drive.files.delete({ fileId: album.google_folder_id });
           console.log(`🗑️ Permanently deleted Google Drive folder for: ${album.client_name}`);
         }
-        // Wipe metadata row cleanly from database
         await supabase.from('albums').delete().eq('id', album.id);
       } catch (err) {
         console.error(`Failed to delete folder for album ${album.id}:`, err.message);
@@ -80,10 +82,7 @@ async function runStudioMaintenance() {
   }
 }
 
-// Run the checks every hour on the hour marker
 cron.schedule('0 * * * *', runStudioMaintenance);
-
-// Run once right on startup to verify execution state
 runStudioMaintenance();
 
 // ---- Routes ----
@@ -104,28 +103,38 @@ app.post('/upload', upload.array('photos'), async (req, res) => {
     };
 
     const folder = await drive.files.create({
-      resource: folderMetadata,
+      requestBody: folderMetadata,
       fields: 'id, webViewLink'
     });
     const folderId = folder.data.id;
 
-    // Step B: Loop and stream the softcopies directly inside the new folder
+    // Step B: FIXED stream pipeline block for uploading files stably
     for (const file of req.files) {
       const fileMetadata = {
         name: `${Date.now()}-${file.originalname}`,
         parents: [folderId]
       };
+
+      // Creates a clean, readable stream out of the multer memory buffer
+      const bufferStream = new Readable();
+      bufferStream.push(file.buffer);
+      bufferStream.push(null); // Signals the end of the file data stream
+
       const media = {
         mimeType: file.mimetype,
-        body: require('stream').Readable.from(file.buffer)
+        body: bufferStream
       };
-      await drive.files.create({ resource: fileMetadata, media: media });
+
+      await drive.files.create({ 
+        requestBody: fileMetadata, 
+        media: media 
+      });
     }
 
     // Step C: Open up sharing properties so public links can resolve the view
     const permission = await drive.permissions.create({
       fileId: folderId,
-      resource: { role: 'reader', type: 'anyone' },
+      requestBody: { role: 'reader', type: 'anyone' },
       fields: 'id'
     });
 
@@ -151,6 +160,7 @@ app.post('/upload', upload.array('photos'), async (req, res) => {
 
     res.json({ albumId, albumUrl, qrCode: qrDataURL });
   } catch (err) {
+    console.error("Upload error details:", err.message); // Logs specific reason to Railway console panel
     res.status(500).json({ error: err.message });
   }
 });
@@ -162,7 +172,6 @@ app.get('/album/:id', async (req, res) => {
 
   if (error || !album) return res.sendFile(path.join(__dirname, 'public', 'expired.html'));
 
-  // Hard stop backup server time verification block
   const now = new Date();
   if (now > new Date(album.expires_at)) return res.sendFile(path.join(__dirname, 'public', 'expired.html'));
 
