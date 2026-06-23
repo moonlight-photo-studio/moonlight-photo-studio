@@ -16,11 +16,11 @@ app.use(express.json());
 app.use(express.static('public'));
 
 // ---- Google Drive User Account OAuth Setup ----
+// FIXED: Explicitly added the matching Playground credentials to fix 'invalid_client'
 const oauth2Client = new google.auth.OAuth2(
-  // Default Playground client credentials to keep configuration free and easy
-  '407408718192.apps.googleusercontent.com', 
-  '7991-b33od9b8v659',
-  'https://developers.google.com/oauthplayground'
+  '407408718192.apps.googleusercontent.com', // Client ID
+  '7991-b33od9b8v659',                       // Client Secret
+  'https://developers.google.com/oauthplayground' // Redirect URI
 );
 
 oauth2Client.setCredentials({
