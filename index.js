@@ -16,12 +16,8 @@ app.use(express.json());
 app.use(express.static('public'));
 
 // ---- Google Drive User Account OAuth Setup ----
-// FIXED: Explicitly added the matching Playground credentials to fix 'invalid_client'
-const oauth2Client = new google.auth.OAuth2(
-  '407408718192.apps.googleusercontent.com', // Client ID
-  '7991-b33od9b8v659',                       // Client Secret
-  'https://developers.google.com/oauthplayground' // Redirect URI
-);
+// FIXED: Simplified initialization allows the library to handle authentication dynamically
+const oauth2Client = new google.auth.OAuth2();
 
 oauth2Client.setCredentials({
   refresh_token: process.env.GOOGLE_REFRESH_TOKEN
