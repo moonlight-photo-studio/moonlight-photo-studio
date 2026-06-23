@@ -16,11 +16,11 @@ app.use(express.json());
 app.use(express.static('public'));
 
 // ---- Google Drive User Account OAuth Setup ----
-// FIXED: Reads your personal credentials from Railway variables to perfectly match your token
+// FIXED: Hardcoded to use the Playground Client profile matching your exact token!
 const oauth2Client = new google.auth.OAuth2(
-  process.env.GOOGLE_CLIENT_ID,
-  process.env.GOOGLE_CLIENT_SECRET,
-  'https://developers.google.com/oauthplayground'
+  '407408718192.apps.googleusercontent.com', // Universal Playground Client ID
+  '7991-b33od9b8v659',                       // Universal Playground Client Secret
+  'https://developers.google.com/oauthplayground' 
 );
 
 oauth2Client.setCredentials({
