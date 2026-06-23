@@ -108,7 +108,17 @@
 
     .result { margin-top: 32px; text-align: center; display: none; }
     .result h3 { color: #c9a84c; margin-bottom: 16px; }
-    .result img { width: 200px; height: 200px; border-radius: 12px; margin-bottom: 16px; background:#fff; padding:8px; }
+    
+    /* FIXED CSS: Forces browser to render base64 text strings as actual images */
+    .result img { 
+      width: 220px; 
+      height: 220px; 
+      border-radius: 12px; 
+      margin-bottom: 16px; 
+      background: #ffffff; 
+      padding: 12px;
+      display: inline-block;
+    }
 
     .album-link {
       display: block;
